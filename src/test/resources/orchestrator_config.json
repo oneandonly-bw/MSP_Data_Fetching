@@ -1,0 +1,39 @@
+{
+    "jetty": {
+      "host": "0.0.0.0",
+      "port": 8080,
+      "acceptQueueSize": 50,
+      "https": {
+        "enabled": false,
+        "httpsSecretName": "orchestrator_https_credentials"
+      },
+      "threadPool": {
+        "type": "fixed",
+        "maxThreads": 20,
+        "minThreads": 10,
+        "idleTimeoutSec": 60
+      },
+      "whitelistSecretName": "orchestrator_whitelist"
+    },
+    "log4j2": {
+      "level": "INFO",
+      "file": {
+        "path": "/orchestrator/logs/orchestrator.log",
+        "pattern": "%d{yyyy-MM-dd HH:mm:ss} [%t] %-5level %logger{36} - %msg%n",
+        "maxFileSizeMB": 50,
+        "maxBackupFiles": 5
+      },
+      "console": {
+        "enabled": true,
+        "pattern": "%d{HH:mm:ss} [%t] %-5level %msg%n"
+      }
+    },
+    "fetcherController": {
+      "maxConcurrentFetchers": 15,
+      "queueSize": 50,
+      "handshakeTokenLength": 36,
+      "ipcPortBase": 9000,
+      "requestTimeoutSec": 600,
+      "restartTimeoutMinutes": 5
+    }
+}

@@ -1,4 +1,4 @@
-package org.orchestrator.test;
+package org.orchestrator.base;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.AfterAll;

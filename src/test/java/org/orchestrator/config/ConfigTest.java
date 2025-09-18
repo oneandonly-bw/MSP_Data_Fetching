@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.orchestrator.config.model.FetcherControllerConfig;
 import org.orchestrator.config.model.JettyConfig;
 import org.orchestrator.config.model.LogConfig;
-import org.orchestrator.test.BaseSetup;
+import org.orchestrator.base.BaseSetup;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;

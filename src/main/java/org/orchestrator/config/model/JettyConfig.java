@@ -18,17 +18,18 @@ public class JettyConfig {
     @JsonProperty("host")
     private String host;
 
-    /** Jetty listen port. Must be between 1 and 65535. */
-    @JsonProperty("port")
-    private int port;
-
     /** Maximum accept queue size for incoming connections. */
     @JsonProperty("acceptQueueSize")
     private int acceptQueueSize;
 
+
     /** Name of the secret in GSM storing the allowed front-end whitelist. Cannot be null or empty. */
     @JsonProperty("whitelistSecretName")
     private String whitelistSecretName;
+
+    /** HTTPS configuration. Must be present, but may be disabled via `enabled` flag. */
+    @JsonProperty("http")
+    private JettyHttpConfig http;
 
     /** HTTPS configuration. Must be present, but may be disabled via `enabled` flag. */
     @JsonProperty("https")
@@ -46,9 +47,14 @@ public class JettyConfig {
         return host;
     }
 
-    /** @return the Jetty port. */
-    public int getPort() {
-        return port;
+    /** @return the Jetty HTTPS port. */
+    public int getHttpsPort() {
+        return https.getHttpsPort();
+    }
+
+    /** @return the Jetty HTTP port. */
+    public int getHttpPort() {
+        return http.getHttpPort();
     }
 
     /** @return the maximum accept queue size. */
@@ -95,12 +101,29 @@ public class JettyConfig {
         if (host == null || host.isBlank()) {
             throw new OrchestratorConfigException("Jetty host is missing or empty");
         }
-        if (port <= 0 || port > 65535) {
-            throw new OrchestratorConfigException("Jetty port must be in range 1-65535");
-        }
+
         if (whitelistSecretName == null || whitelistSecretName.isBlank()) {
             throw new OrchestratorConfigException("Jetty whitelistSecretName is missing or empty");
         }
+        if (http == null && https == null) {
+            throw new OrchestratorConfigException("At least one (or both) section 'http' or 'https should be defined");
+        }
+        boolean atLeastOneEnabled = false;
+
+        if (http != null) {
+            http.validate();
+            atLeastOneEnabled = http.isEnabled();
+        }
+
+        if (https != null) {
+            https.validate();
+            atLeastOneEnabled = atLeastOneEnabled || https.isEnabled();
+        }
+
+        if (!atLeastOneEnabled) {
+            throw new OrchestratorConfigException("At least one (or both) interface 'http' or 'https should be enabled");
+        }
+
         if (threadPool == null) {
             throw new OrchestratorConfigException("Jetty threadPool configuration is missing");
         }

@@ -108,21 +108,23 @@ public class JettyConfig {
         if (http == null && https == null) {
             throw new OrchestratorConfigException("At least one (or both) section 'http' or 'https should be defined");
         }
-        boolean atLeastOneEnabled = false;
+
+        int countEnabled = 0;
 
         if (http != null) {
             http.validate();
-            atLeastOneEnabled = http.isEnabled();
+            countEnabled ++;
         }
 
         if (https != null) {
             https.validate();
-            atLeastOneEnabled = atLeastOneEnabled || https.isEnabled();
+            countEnabled ++;
         }
 
-        if (!atLeastOneEnabled) {
-            throw new OrchestratorConfigException("At least one (or both) interface 'http' or 'https should be enabled");
+        if (countEnabled == 2 && (getHttpPort() == getHttpsPort())) {
+            throw new OrchestratorConfigException("The http port should not be the same as https port ");
         }
+
 
         if (threadPool == null) {
             throw new OrchestratorConfigException("Jetty threadPool configuration is missing");

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.orchestrator.config.exception.OrchestratorConfigException;
+import org.orchestrator.config.exception.OrchestratorConfigReloadException;
 import org.orchestrator.config.model.FetcherControllerConfig;
 import org.orchestrator.config.model.JettyConfig;
 import org.orchestrator.config.model.LogConfig;
@@ -11,76 +12,95 @@ import org.orchestrator.config.model.OrchestratorConfigData;
 import org.orchestrator.OrchestratorPaths;
 
 import java.io.IOException;
-import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Singleton class representing the Orchestrator configuration.
- * Loads, validates, and exposes configuration for Jetty, Log4j2, and FetcherController.
+ *
+ * <p>Provides access to configuration sections: JettyConfig, LogConfig, FetcherControllerConfig.
+ * Thread-safe reads and reloads via AtomicReference. Access before initialization throws IllegalStateException.
  */
 public class OrchestratorConfig {
 
+    /** Singleton instance */
     private static volatile OrchestratorConfig instance;
 
-    private final OrchestratorConfigData config;
+    /** Fixed path to the configuration file (stored once at init) */
+    private static Path configFilePath;
+
+    /** Configuration data; AtomicReference ensures thread-safe atomic swaps */
+    private final AtomicReference<OrchestratorConfigData> configRef;
 
     /**
-     * Private constructor.
+     * Private constructor using loaded configuration.
+     *
+     * @param config fully loaded and validated OrchestratorConfigData
      */
     private OrchestratorConfig(OrchestratorConfigData config) {
-        this.config = config;
+        this.configRef = new AtomicReference<>(config);
+    }
+
+    // ======= Initialization Methods =======
+
+    /**
+     * Initializes the singleton by loading the configuration from file.
+     * Safe to call multiple times; subsequent calls do nothing.
+     */
+    public static synchronized void init() throws OrchestratorConfigException, IOException {
+        if (instance == null) {
+            configFilePath = OrchestratorPaths.getInstance().getConfigFilePath();
+            OrchestratorConfigData parsedConfig = loadConfig(configFilePath);
+            instance = new OrchestratorConfig(parsedConfig);
+        }
     }
 
     /**
-     * Returns the singleton instance of OrchestratorConfig.
-     * Loads configuration from file on first call and validates it.
+     * Returns the singleton instance.
      *
-     * @return OrchestratorConfig singleton instance
-     * @throws OrchestratorConfigException if configuration cannot be read, parsed, or is invalid
-     * @throws InvalidPathException        if the configuration file path is invalid
-     * @throws IOException                 for I/O errors reading the configuration file
+     * @throws IllegalStateException if init() was not called yet
      */
-    public static OrchestratorConfig getInstance() throws InvalidPathException, IOException {
-        if (instance == null) {
-            synchronized (OrchestratorConfig.class) {
-                if (instance == null) {
-                    OrchestratorPaths paths = OrchestratorPaths.getInstance();
-                    Path configFilePath = paths.getConfigFilePath();
-                    OrchestratorConfigData parsedConfig = loadConfig(configFilePath);
-                    instance = new OrchestratorConfig(parsedConfig);
-                }
-            }
+    public static OrchestratorConfig getInstance()
+    throws IllegalStateException {
+        if (instance == null || instance.configRef.get() == null) {
+            throw new IllegalStateException("OrchestratorConfig not initialized. Call init() first.");
         }
         return instance;
     }
 
-    public static OrchestratorConfig resetAndGetInstance()
-    throws InvalidPathException, IOException {
-        instance = null;
-        return getInstance();
+    /**
+     * Reloads the configuration from the stored config file path.
+     *
+     * <p>If reload fails, old configuration remains active.
+     */
+    public static void reInit()
+    throws OrchestratorConfigReloadException {
+        OrchestratorConfig cfg = getInstance();
+
+        try {
+            OrchestratorConfigData newConfig = loadConfig(configFilePath);
+            cfg.configRef.set(newConfig); // atomic swap
+        } catch (OrchestratorConfigException | IOException e) {
+            throw new OrchestratorConfigReloadException(
+                    "Reinitialization of OrchestratorConfig failed. System continues with old config.", e
+            );
+        }
     }
 
-    /**
-     * Loads and validates the Orchestrator configuration from JSON file.
-     *
-     * @param configFilePath path to orchestrator_config.json
-     * @return parsed and validated OrchestratorConfigData
-     * @throws OrchestratorConfigException for parse, validation errors or IO failing
-     *
-     */
+    // ======= Internal Loading =======
+
     private static OrchestratorConfigData loadConfig(Path configFilePath)
-    throws OrchestratorConfigException {
+    throws OrchestratorConfigException, IOException {
 
         ObjectMapper mapper = new ObjectMapper();
+
         try {
             OrchestratorConfigData parsedConfig = mapper.readValue(
                     configFilePath.toFile(),
                     OrchestratorConfigData.class
             );
 
-            // Delegate validation to POJOs
             parsedConfig.validate();
-
             return parsedConfig;
 
         } catch (JsonParseException e) {
@@ -91,40 +111,38 @@ public class OrchestratorConfig {
             throw new OrchestratorConfigException(
                     "Invalid Orchestrator configuration structure: " + configFilePath
                             + ". Mapping failed: " + e.getMessage(), e);
-
-        } catch (IOException e) {
-            throw new OrchestratorConfigException(
-                    "Cannot read Orchestrator configuration file: " + configFilePath, e);
         }
     }
 
-    // ===== Public getters for configuration sections =====
+    // ======= Getters with Initialization Check =======
 
-    /**
-     * Returns Jetty configuration section.
-     */
+    private void ensureInitialized() {
+        if (configRef.get() == null) {
+            throw new IllegalStateException("OrchestratorConfig not initialized. Call init() first.");
+        }
+    }
+
+    /** Returns the full configuration data. */
     public OrchestratorConfigData getConfig() {
-        return config;
+        ensureInitialized();
+        return configRef.get();
     }
 
-    /**
-     * Returns Jetty configuration.
-     */
+    /** Returns the Jetty configuration section. */
     public JettyConfig getJettyConfig() {
-        return config.getJetty();
+        ensureInitialized();
+        return configRef.get().getJetty();
     }
 
-    /**
-     * Returns Log4j2 configuration.
-     */
+    /** Returns the Log4j2 configuration section. */
     public LogConfig getLog4j2Config() {
-        return config.getLog4j2();
+        ensureInitialized();
+        return configRef.get().getLog4j2();
     }
 
-    /**
-     * Returns FetcherController configuration.
-     */
+    /** Returns the FetcherController configuration section. */
     public FetcherControllerConfig getFetcherControllerConfig() {
-        return config.getFetcherController();
+        ensureInitialized();
+        return configRef.get().getFetcherController();
     }
 }

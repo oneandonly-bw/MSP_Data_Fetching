@@ -22,22 +22,41 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Centralized logger manager for the Orchestrator.
  *
- * <p>Explicit initialization via init(), thread-safe with AtomicReference.
- * Future reInit() can implement lock-free configuration reload.
+ * <p>This class controls initialization, retrieval, and shutdown of the Log4j2 logging system.
+ * It ensures that logging is configured consistently across the entire application.
+ *
+ * <ul>
+ *   <li>Thread-safe initialization using {@link AtomicBoolean} and {@link AtomicReference}.</li>
+ *   <li>Supports returning a default fallback logger (root logger) if {@link #init()} has not been called.</li>
+ *   <li>Designed for future lock-free reinitialization of logging configuration.</li>
+ * </ul>
+ *
+ * <p>Usage example:
+ * <pre>{@code
+ * OrchestratorLoggerManager.init();
+ * OrchestratorLogger log = OrchestratorLoggerManager.getLogger(MyClass.class);
+ * log.info("Service started");
+ * }</pre>
  */
 public final class OrchestratorLoggerManager {
 
+    /** Holds the current {@link LoggerContext}. Updated atomically during init or shutdown. */
     private static final AtomicReference<LoggerContext> contextRef = new AtomicReference<>();
+
+    /** Tracks whether the logging system has been initialized. */
     private static final AtomicBoolean initialized = new AtomicBoolean(false);
 
+    /** Private constructor to prevent instantiation. */
     private OrchestratorLoggerManager() {}
 
     // ======= Public API =======
 
     /**
-     * Initializes the logging system.
+     * Initializes the logging system with configuration loaded from {@link OrchestratorConfig}.
      *
-     * @throws LoggerInitializationFailedException if logger cannot be configured
+     * <p>If already initialized, this method does nothing.
+     *
+     * @throws LoggerInitializationFailedException if logging configuration fails to load
      */
     public static void init() throws LoggerInitializationFailedException {
         if (!initialized.get()) {
@@ -54,21 +73,37 @@ public final class OrchestratorLoggerManager {
     /**
      * Returns a logger for the specified class.
      *
-     * <p>Requires that init() has been called first.
+     * <p>If the logging system has not been initialized via {@link #init()}, a logger
+     * wrapping the Log4j2 root logger will be returned instead. This ensures that
+     * logging calls never throw errors even if initialization is missing.
+     *
+     * @param clazz the class for which a logger is requested
+     * @return a wrapped {@link OrchestratorLogger} instance
      */
+
     public static OrchestratorLogger getLogger(Class<?> clazz) {
+
         if (!initialized.get()) {
-            throw new IllegalStateException("OrchestratorLoggerManager not initialized. Call init() first.");
+            // Fallback: default root logger
+            return new OrchestratorLogger(null);
         }
+
         LoggerContext context = contextRef.get(); // atomic read
         if (context == null) {
             throw new IllegalStateException("LoggerContext is null despite initialization.");
         }
+
         Logger log4jLogger = LogManager.getLogger(clazz);
-        return new LoggerAdapter(log4jLogger);
+        return new OrchestratorLogger(log4jLogger);
     }
 
-    /** Shuts down the logging system. */
+    /**
+     * Shuts down the logging system.
+     *
+     * <p>This stops the {@link LoggerContext} and resets initialization state.
+     * After shutdown, calls to {@link #getLogger(Class)} will return loggers
+     * that delegate to the Log4j2 root logger.
+     */
     public static void shutdown() {
         LoggerContext context = contextRef.getAndSet(null);
         if (context != null) {
@@ -77,13 +112,33 @@ public final class OrchestratorLoggerManager {
         initialized.set(false);
     }
 
-    /** Stub for future re-initialization of logging configuration. */
+    /**
+     * Placeholder for future logging reconfiguration.
+     *
+     * <p>Intended for supporting hot-reload of logging settings without
+     * application restart. Will replace the context in {@link #contextRef}.
+     */
     public static void reInit() {
         // TODO: implement lock-free reloading using contextRef.set(newContext)
     }
 
+    /**
+     * Indicates whether the logging system has been initialized.
+     *
+     * @return {@code true} if initialized, {@code false} otherwise
+     */
+    public static boolean isInitialized() {
+        return initialized.get();
+    }
+
     // ======= Internal Configuration =======
 
+    /**
+     * Builds and initializes a new {@link LoggerContext} based on application configuration.
+     *
+     * @return the initialized {@link LoggerContext}
+     * @throws LoggerInitializationFailedException if configuration fails (e.g., missing log directory)
+     */
     private static LoggerContext configureLogging() throws LoggerInitializationFailedException {
         try {
             OrchestratorConfig orchestratorConfig = OrchestratorConfig.getInstance();
@@ -143,10 +198,16 @@ public final class OrchestratorLoggerManager {
             return context;
 
         } catch (Exception e) {
-            throw new LoggerInitializationFailedException( "Logger initialization failed.", e);
+            throw new LoggerInitializationFailedException("Logger initialization failed.", e);
         }
     }
 
+    /**
+     * Converts the internal {@link LogConfig.LogLevel} enum into a Log4j2 {@link Level}.
+     *
+     * @param levelEnum application-defined log level
+     * @return corresponding Log4j2 {@link Level}, defaults to {@link Level#INFO} if null
+     */
     private static Level toLog4jLevel(LogConfig.LogLevel levelEnum) {
         if (levelEnum == null) return Level.INFO;
         return switch (levelEnum) {

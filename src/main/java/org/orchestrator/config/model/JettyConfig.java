@@ -3,78 +3,102 @@ package org.orchestrator.config.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.orchestrator.config.exception.OrchestratorConfigException;
+import org.orchestrator.logging.OrchestratorLogger;
+import org.orchestrator.logging.OrchestratorLoggerManager;
+
+import java.util.Objects;
 
 /**
  * Configuration for the embedded Jetty server used by the Orchestrator.
  * <p>
  * This class represents the "jetty" section in the Orchestrator JSON configuration.
- * It includes host, port, thread pool, HTTPS settings, accept queue size, and whitelist.
- * </p>
+ * It includes host, HTTP/HTTPS settings, thread pool, accept queue size, and whitelist secret.
+ * <p>
+ * <b>Usage:</b> Deserialized from JSON using Jackson; automatically validated on construction.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class JettyConfig {
 
     /** Jetty bind host (e.g., "0.0.0.0"). Cannot be null or empty. */
     @JsonProperty("host")
-    private String host;
+    private final String host;
 
-    /** Maximum accept queue size for incoming connections. */
+    /** Maximum accept queue size for incoming connections. Must be > 0. */
     @JsonProperty("acceptQueueSize")
-    private int acceptQueueSize;
-
+    private final int acceptQueueSize;
 
     /** Name of the secret in GSM storing the allowed front-end whitelist. Cannot be null or empty. */
     @JsonProperty("whitelistSecretName")
-    private String whitelistSecretName;
+    private final String whitelistSecretName;
 
-    /** HTTPS configuration. Must be present, but may be disabled via `enabled` flag. */
+    /** HTTP configuration. Must be present if used. */
     @JsonProperty("http")
-    private JettyHttpConfig http;
+    private final JettyHttpConfig http;
 
-    /** HTTPS configuration. Must be present, but may be disabled via `enabled` flag. */
+    /** HTTPS configuration. Must be present if used. */
     @JsonProperty("https")
-    private JettyHttpsConfig https;
+    private final JettyHttpsConfig https;
 
     /** Thread pool configuration. Must be present. */
     @JsonProperty("threadPool")
-    private JettyThreadPoolConfig threadPool;
+    private final JettyThreadPoolConfig threadPool;
 
-    /** Default constructor for Jackson deserialization. */
-    JettyConfig() {}
+    private final OrchestratorLogger logger;
 
-    /** @return the Jetty host. */
+    /**
+     * Package-private constructor for Jackson deserialization.
+     * <p>
+     * Automatically validates the configuration after creation.
+     */
+    JettyConfig(
+            @JsonProperty("host") String host,
+            @JsonProperty("acceptQueueSize") int acceptQueueSize,
+            @JsonProperty("whitelistSecretName") String whitelistSecretName,
+            @JsonProperty("http") JettyHttpConfig http,
+            @JsonProperty("https") JettyHttpsConfig https,
+            @JsonProperty("threadPool") JettyThreadPoolConfig threadPool) {
+
+        this.host = host != null ? host.trim() : null;
+        this.acceptQueueSize = acceptQueueSize;
+        this.whitelistSecretName = whitelistSecretName != null ? whitelistSecretName.trim() : null;
+        this.http = http;
+        this.https = https;
+        this.threadPool = threadPool;
+        this.logger = OrchestratorLoggerManager.getLogger(this.getClass());
+
+        validate();
+    }
+
     public String getHost() {
         return host;
     }
 
-    /** @return the Jetty HTTPS port. */
-    public int getHttpsPort() {
-        return https.getHttpsPort();
-    }
-
-    /** @return the Jetty HTTP port. */
-    public int getHttpPort() {
-        return http.getHttpPort();
-    }
-
-    /** @return the maximum accept queue size. */
     public int getAcceptQueueSize() {
         return acceptQueueSize;
     }
 
-    /** @return the HTTPS configuration object. */
+    public String getWhitelistSecretName() {
+        return whitelistSecretName;
+    }
+
+    public JettyHttpConfig getHttp() {
+        return http;
+    }
+
     public JettyHttpsConfig getHttps() {
         return https;
     }
 
-    /** @return the thread pool configuration object. */
     public JettyThreadPoolConfig getThreadPool() {
         return threadPool;
     }
 
-    /** @return the name of the whitelist secret in GSM. */
-    public String getWhitelistSecretName() {
-        return whitelistSecretName;
+    public int getHttpPort() {
+        return http != null ? http.getHttpPort() : -1;
+    }
+
+    public int getHttpsPort() {
+        return https != null ? https.getHttpsPort() : -1;
     }
 
     /**
@@ -82,58 +106,70 @@ public class JettyConfig {
      * <p>
      * Performs the following checks:
      * <ul>
-     *     <li>Host is not null/blank (trimmed).</li>
-     *     <li>Port is within 1–65535.</li>
-     *     <li>Whitelist secret name is not null/blank (trimmed).</li>
-     *     <li>Thread pool configuration is present and valid.</li>
-     *     <li>HTTPS configuration is present and valid.</li>
+     *     <li>Host is not null/blank</li>
+     *     <li>Accept queue size is > 0</li>
+     *     <li>Whitelist secret name is not null/blank</li>
+     *     <li>At least one of HTTP or HTTPS configuration is defined</li>
+     *     <li>HTTP and HTTPS configurations are valid if present</li>
+     *     <li>HTTP and HTTPS ports do not conflict</li>
+     *     <li>Thread pool configuration is present and valid</li>
      * </ul>
-     * </p>
      *
      * @throws OrchestratorConfigException if any configuration rule is violated
      */
-    public void validate() throws OrchestratorConfigException {
+    private void validate() {
 
-        // Trim string fields
-        host = host != null ? host.trim() : null;
-        whitelistSecretName = whitelistSecretName != null ? whitelistSecretName.trim() : null;
+        String message =  null;
 
         if (host == null || host.isBlank()) {
-            throw new OrchestratorConfigException("Jetty host is missing or empty");
+            message = "Jetty host is missing or empty.";
+        } else if (whitelistSecretName == null || whitelistSecretName.isBlank()) {
+            message = "Jetty whitelistSecretName is missing or empty.";
+        } else if (acceptQueueSize <= 0) {
+            message = "Jetty acceptQueueSize must be greater than 0.";
+        } else if (http == null && https == null) {
+            throw new OrchestratorConfigException("At least one of 'http' or 'https' section must be defined.");
+        } else if (http != null && https != null && getHttpPort() == getHttpsPort()) {
+            message = "HTTP port must not be the same as HTTPS port.";
+        } else if (threadPool == null) {
+            message = "Jetty threadPool configuration is missing.";
         }
 
-        if (whitelistSecretName == null || whitelistSecretName.isBlank()) {
-            throw new OrchestratorConfigException("Jetty whitelistSecretName is missing or empty");
+        if (message != null) {
+            logger.error(message);
+            throw new OrchestratorConfigException(message);
         }
-        if (http == null && https == null) {
-            throw new OrchestratorConfigException("At least one (or both) section 'http' or 'https should be defined");
-        }
+    }
 
-        int countEnabled = 0;
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof JettyConfig that))
+            return false;
+        return acceptQueueSize == that.acceptQueueSize &&
+                Objects.equals(host, that.host) &&
+                Objects.equals(whitelistSecretName, that.whitelistSecretName) &&
+                Objects.equals(http, that.http) &&
+                Objects.equals(https, that.https) &&
+                Objects.equals(threadPool, that.threadPool);
+    }
 
-        if (http != null) {
-            http.validate();
-            countEnabled ++;
-        }
+    @Override
+    public int hashCode() {
+        return Objects.hash(host, acceptQueueSize,
+                whitelistSecretName, http, https, threadPool);
+    }
 
-        if (https != null) {
-            https.validate();
-            countEnabled ++;
-        }
-
-        if (countEnabled == 2 && (getHttpPort() == getHttpsPort())) {
-            throw new OrchestratorConfigException("The http port should not be the same as https port ");
-        }
-
-
-        if (threadPool == null) {
-            throw new OrchestratorConfigException("Jetty threadPool configuration is missing");
-        }
-        threadPool.validate();
-
-        if (https == null) {
-            throw new OrchestratorConfigException("Jetty https configuration is missing");
-        }
-        https.validate();
+    @Override
+    public String toString() {
+        return "JettyConfig{" +
+                "host='" + host + '\'' +
+                ", acceptQueueSize=" + acceptQueueSize +
+                ", whitelistSecretName=" +
+                    (whitelistSecretName != null ? "****" : "null") + '\'' +
+                ", http=" + http.toString() +
+                ", https=" + https.toString() +
+                ", threadPool=" + threadPool.toString() +
+                '}';
     }
 }

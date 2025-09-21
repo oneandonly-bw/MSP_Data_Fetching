@@ -9,8 +9,8 @@ import java.io.IOException;
 
 //TODO: add an option to load config from custom location  => config.dir property
 //TODO: add OrchestratorLoggerManager.init (OrchestratorConfig config)
-//TODO: all getters including getConfig and getLogger should throw IllegalStateException if not initialized
 //TODO: HTTP Server - the same as above
+//TODO: Paths - the same
 public class OrchestratorMain {
 
     private static OrchestratorLogger logger;
@@ -18,8 +18,7 @@ public class OrchestratorMain {
 
     public static void main(String[] args) throws IOException {
 
-        //Initialize and Orchestrator configuration
-        //This also validates that config is valid
+        //Initialize and validate orchestrator configuration
         try {
             OrchestratorConfig.init();
             System.out.println("INFO: Orchestrator configuration is loaded");
@@ -29,18 +28,17 @@ public class OrchestratorMain {
             System.exit(1);
         }
 
-
-
-        //Initialize and get Orchestrator logger
+        //Initialize orchestrator logger
         try {
-            logger = OrchestratorLoggerManager.getLogger(OrchestratorMain.class);
-            logger.info("Logger is initialized");
-        } catch (IOException e) {
+            OrchestratorLoggerManager.init();
+        } catch (Exception e) {
             System.out.println("ERROR: Failed to initialize logger. " +
                     "Message: " + e.getMessage() + " Exiting...");
             System.exit(1);
-
         }
+
+        logger = OrchestratorLoggerManager.getLogger(OrchestratorMain.class);
+        logger.info("Logger is initialized");
 
     }
 

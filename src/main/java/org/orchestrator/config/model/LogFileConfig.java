@@ -4,58 +4,79 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.orchestrator.config.exception.OrchestratorConfigException;
 
+import java.util.Objects;
+
 /**
  * Configuration for file-based logging in Log4j2.
- * <p>
- * Represents the "file" section under "log4j2" in the Orchestrator JSON configuration.
- * </p>
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class LogFileConfig {
 
-    /** Log message pattern. Cannot be null or empty. */
     @JsonProperty("pattern")
-    private String pattern;
+    private final String pattern;
 
-    /** Maximum log file size in megabytes. Must be >= 1. */
     @JsonProperty("maxFileSizeMB")
-    private int maxFileSizeMB;
+    private final int maxFileSizeMB;
 
-    /** Maximum number of backup files. Must be >= 1. */
     @JsonProperty("maxBackupFiles")
-    private int maxBackupFiles;
+    private final int maxBackupFiles;
 
-    /** Default constructor for Jackson deserialization. */
-    LogFileConfig() {}
+    /**
+     * Package-private constructor for Jackson deserialization.
+     */
+    LogFileConfig(
+            @JsonProperty("pattern") String pattern,
+            @JsonProperty("maxFileSizeMB") int maxFileSizeMB,
+            @JsonProperty("maxBackupFiles") int maxBackupFiles
+    ) {
+        this.pattern = pattern;
+        this.maxFileSizeMB = maxFileSizeMB;
+        this.maxBackupFiles = maxBackupFiles;
+        validate();
+    }
 
-    /** @return the log message pattern. */
     public String getPattern() {
         return pattern;
     }
 
-    /** @return maximum log file size in MB. */
     public int getMaxFileSizeMB() {
         return maxFileSizeMB;
     }
 
-    /** @return maximum number of backup log files. */
     public int getMaxBackupFiles() {
         return maxBackupFiles;
     }
 
-    /**
-     * Validates the log file configuration.
-     * <p>
-     * Checks that pattern is not null/empty, and maxFileSizeMB and maxBackupFiles are >= 1.
-     * </p>
-     *
-     * @throws OrchestratorConfigException if any configuration rule is violated
-     */
-    public void validate() throws OrchestratorConfigException {
-        pattern = pattern != null ? pattern.trim() : null;
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof LogFileConfig that))
+            return false;
 
-        if (pattern == null || pattern.isBlank()) {
-            throw new OrchestratorConfigException("LogFileConfig.pattern is missing or empty");
+        return maxFileSizeMB == that.maxFileSizeMB &&
+                maxBackupFiles == that.maxBackupFiles &&
+                Objects.equals(pattern, that.pattern);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(pattern, maxFileSizeMB, maxBackupFiles);
+    }
+
+    @Override
+    public String toString() {
+        return "LogFileConfig{" +
+                "pattern='" + pattern + '\'' +
+                ", maxFileSizeMB=" + maxFileSizeMB +
+                ", maxBackupFiles=" + maxBackupFiles +
+                '}';
+    }
+
+    /** Validates the file log configuration. Called from constructor. */
+    private void validate() {
+        String trimmedPattern = pattern != null ? pattern.trim() : null;
+        if (trimmedPattern == null || trimmedPattern.isBlank()) {
+            throw new OrchestratorConfigException("LogFileConfig.pattern is required and cannot be empty.");
         }
         if (maxFileSizeMB < 1) {
             throw new OrchestratorConfigException(
@@ -67,4 +88,3 @@ public class LogFileConfig {
         }
     }
 }
-

@@ -26,7 +26,7 @@ public class OrchestratorConfigValidator {
         try {
             OrchestratorConfig config = OrchestratorConfig.getInstance();
             System.out.println("Configuration validation passed: orchestrator_config.json is valid.");
-        } catch ( IOException e) {
+        } catch ( Exception e) {
             System.err.println("ERROR: " + e.getMessage());
             System.exit(1);
         }

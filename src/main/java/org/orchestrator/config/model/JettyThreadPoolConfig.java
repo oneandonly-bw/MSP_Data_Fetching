@@ -1,116 +1,120 @@
 package org.orchestrator.config.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.orchestrator.config.exception.OrchestratorConfigException;
+import org.orchestrator.logging.OrchestratorLogger;
+import org.orchestrator.logging.OrchestratorLoggerManager;
+
+import java.util.Objects;
 
 /**
- * Configuration for Jetty thread pool used by the Orchestrator.
+ * Configuration for the Jetty thread pool.
  * <p>
- * This class represents the thread pool configuration section in the
- * orchestrator JSON configuration.
- * </p>
+ * Includes pool type, min/max threads, and idle timeout.
  */
-@JsonIgnoreProperties(ignoreUnknown = true)
 public class JettyThreadPoolConfig {
 
-    /**
-     * Type of thread pool. Valid values: "fixed" or "dynamic".
-     */
+    /** Type of thread pool. Valid values: "fixed" or "dynamic". */
     @JsonProperty("type")
-    private String type;
+    private final String type;
 
-    /**
-     * Maximum number of threads in the pool. Must be >= 1.
-     */
+    /** Maximum number of threads in the pool. Must be >= 1. */
     @JsonProperty("maxThreads")
-    private int maxThreads;
+    private final int maxThreads;
 
-    /**
-     * Minimum number of threads in the pool. Must be >= 1.
-     */
+    /** Minimum number of threads in the pool. Must be >= 1. */
     @JsonProperty("minThreads")
-    private int minThreads;
+    private final int minThreads;
 
-    /**
-     * Idle timeout in seconds for threads. Must be >= 1.
-     */
+    /** Idle timeout in seconds for threads. Must be >= 1. */
     @JsonProperty("idleTimeoutSec")
-    private int idleTimeoutSec;
+    private final int idleTimeoutSec;
+
+    private final OrchestratorLogger logger;
 
     /**
-     * Default constructor for Jackson deserialization.
+     * Package-private constructor for Jackson deserialization.
+     * Calls private validate method.
      */
-    JettyThreadPoolConfig() {
+    JettyThreadPoolConfig(
+            @JsonProperty(value = "type", required = true) String type,
+            @JsonProperty("maxThreads") int maxThreads,
+            @JsonProperty("minThreads") int minThreads,
+            @JsonProperty("idleTimeoutSec") int idleTimeoutSec
+    ) {
+        this.type = type;
+        this.maxThreads = maxThreads;
+        this.minThreads = minThreads;
+        this.idleTimeoutSec = idleTimeoutSec;
+        this.logger = OrchestratorLoggerManager.getLogger(this.getClass());
+        validate();
     }
 
-    /**
-     * @return the type of thread pool ("fixed" or "dynamic").
-     */
     public String getType() {
         return type;
     }
 
-    /**
-     * @return the maximum number of threads.
-     */
     public int getMaxThreads() {
         return maxThreads;
     }
 
-    /**
-     * @return the minimum number of threads.
-     */
     public int getMinThreads() {
         return minThreads;
     }
 
-    /**
-     * @return the idle timeout in seconds.
-     */
     public int getIdleTimeoutSec() {
         return idleTimeoutSec;
     }
 
-    /**
-     * Validates the configuration values.
-     * <p>
-     * Checks that all fields have valid values:
-     * - type must be "fixed" or "dynamic"
-     * - minThreads and maxThreads must be >= 1
-     * - minThreads <= maxThreads
-     * - idleTimeoutSec >= 1
-     * </p>
-     *
-     * @throws OrchestratorConfigException if any validation rule is violated
-     */
-    public void validate() throws OrchestratorConfigException {
-        // Check type
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof JettyThreadPoolConfig that))
+            return false;
+
+        return maxThreads == that.maxThreads &&
+                minThreads == that.minThreads &&
+                idleTimeoutSec == that.idleTimeoutSec &&
+                Objects.equals(type, that.type);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(type, maxThreads, minThreads, idleTimeoutSec);
+    }
+
+    @Override
+    public String toString() {
+        return "JettyThreadPoolConfig{" +
+                "type='" + type + '\'' +
+                ", maxThreads=" + maxThreads +
+                ", minThreads=" + minThreads +
+                ", idleTimeoutSec=" + idleTimeoutSec +
+                '}';
+    }
+
+    /** Validates the thread pool configuration. Called from constructor. */
+    private void validate() {
+
+        String message = null;
+
         if (type == null || type.isBlank()) {
-            throw new OrchestratorConfigException("JettyThreadPoolConfig.type is missing or empty");
-        }
-        if (!type.equals("fixed") && !type.equals("dynamic")) {
-            throw new OrchestratorConfigException("JettyThreadPoolConfig.type must be 'fixed' or 'dynamic', but was: " + type);
-        }
-
-        // Check maxThreads
-        if (maxThreads < 1) {
-            throw new OrchestratorConfigException("JettyThreadPoolConfig.maxThreads must be >= 1, but was: " + maxThreads);
-        }
-
-        // Check minThreads
-        if (minThreads < 1) {
-            throw new OrchestratorConfigException("JettyThreadPoolConfig.minThreads must be >= 1, but was: " + minThreads);
+            message = "Jetty thread pool type must be defined and not empty.";
+        } else if (!type.equals("fixed") && !type.equals("dynamic")) {
+            message = "Jetty thread pool type must be 'fixed' or 'dynamic', but was: " + type;
+        } else if (maxThreads < 1) {
+            message = "Jetty thread pool maxThreads must be >= 1, but was: " + maxThreads;
+        } else if (minThreads < 1) {
+            message = "Jetty thread pool minThreads must be >= 1, but was: " + minThreads;
+        } else if (minThreads > maxThreads) {
+            message ="Jetty thread pool minThreads cannot be greater than maxThreads.";
+        } else if (idleTimeoutSec < 1) {
+            message = "Jetty thread pool idleTimeoutSec must be >= 1, but was: " + idleTimeoutSec;
         }
 
-        // Ensure minThreads <= maxThreads
-        if (minThreads > maxThreads) {
-            throw new OrchestratorConfigException("JettyThreadPoolConfig.minThreads cannot be greater than maxThreads");
-        }
-
-        // Check idleTimeoutSec
-        if (idleTimeoutSec < 1) {
-            throw new OrchestratorConfigException("JettyThreadPoolConfig.idleTimeoutSec must be >= 1, but was: " + idleTimeoutSec);
+        if (message != null) {
+            logger.error (message);
+            throw new OrchestratorConfigException(message);
         }
     }
 }

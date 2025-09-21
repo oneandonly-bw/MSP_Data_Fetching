@@ -27,7 +27,7 @@ public class OrchestratorConfig {
     private static volatile OrchestratorConfig instance;
 
     /** Fixed path to the configuration file (stored once at init) */
-    private static Path configFilePath;
+    private final Path configFilePath;
 
     /** Configuration data; AtomicReference ensures thread-safe atomic swaps */
     private final AtomicReference<OrchestratorConfigData> configRef;
@@ -37,8 +37,9 @@ public class OrchestratorConfig {
      *
      * @param config fully loaded and validated OrchestratorConfigData
      */
-    private OrchestratorConfig(OrchestratorConfigData config) {
+    private OrchestratorConfig(OrchestratorConfigData config, Path configFilePath) {
         this.configRef = new AtomicReference<>(config);
+        this.configFilePath = configFilePath;
     }
 
     // ======= Initialization Methods =======
@@ -49,9 +50,9 @@ public class OrchestratorConfig {
      */
     public static synchronized void init() throws OrchestratorConfigException, IOException {
         if (instance == null) {
-            configFilePath = OrchestratorPaths.getInstance().getConfigFilePath();
+            Path configFilePath = OrchestratorPaths.getInstance().getConfigFilePath();
             OrchestratorConfigData parsedConfig = loadConfig(configFilePath);
-            instance = new OrchestratorConfig(parsedConfig);
+            instance = new OrchestratorConfig(parsedConfig, configFilePath);
         }
     }
 
@@ -78,7 +79,7 @@ public class OrchestratorConfig {
         OrchestratorConfig cfg = getInstance();
 
         try {
-            OrchestratorConfigData newConfig = loadConfig(configFilePath);
+            OrchestratorConfigData newConfig = loadConfig(cfg.configFilePath);
             cfg.configRef.set(newConfig); // atomic swap
         } catch (OrchestratorConfigException | IOException e) {
             throw new OrchestratorConfigReloadException(
@@ -95,13 +96,10 @@ public class OrchestratorConfig {
         ObjectMapper mapper = new ObjectMapper();
 
         try {
-            OrchestratorConfigData parsedConfig = mapper.readValue(
+            return  mapper.readValue(
                     configFilePath.toFile(),
                     OrchestratorConfigData.class
             );
-
-            parsedConfig.validate();
-            return parsedConfig;
 
         } catch (JsonParseException e) {
             throw new OrchestratorConfigException(

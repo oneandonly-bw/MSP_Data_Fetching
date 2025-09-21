@@ -8,31 +8,19 @@ import org.orchestrator.config.exception.OrchestratorConfigException;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Objects;
 
 /**
  * Represents the logging configuration for the Orchestrator.
- * Includes log level, file, and console settings.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
+
 public class LogConfig {
 
-    /**
-     * Supported log levels for Orchestrator logging.
-     * Case-insensitive deserialization is supported via {@link #fromString(String)}.
-     */
     public enum LogLevel {
-        INFO,
-        WARN,
-        ERROR,
-        DEBUG;
 
-        /**
-         * Converts a string to a LogLevel enum value.
-         * Accepts any case (e.g., "info", "INFO", "Info").
-         *
-         * @param key the log level string
-         * @return corresponding LogLevel enum
-         */
+        INFO, WARN, ERROR, DEBUG;
+
         @JsonCreator
         public static LogLevel fromString(String key) {
             if (key == null) return null;
@@ -41,85 +29,93 @@ public class LogConfig {
     }
 
     @JsonProperty("level")
-    private LogLevel level;
+    private final LogLevel level;
 
     @JsonProperty("file")
-    private LogFileConfig file;
+    private final LogFileConfig file;
 
     @JsonProperty("console")
-    private LogConsoleConfig console;
-
-    LogConfig() {}
+    private final LogConsoleConfig console;
 
     /**
-     * Returns the configured log level.
+     * Package-private constructor for Jackson deserialization.
      */
+    LogConfig(
+            @JsonProperty(value = "level", required = true) String level,
+            @JsonProperty("file") LogFileConfig file,
+            @JsonProperty("console") LogConsoleConfig console
+    ) {
+        this.level = LogLevel.fromString(level);
+        this.file = file;
+        this.console = console;
+        validate();
+    }
+
     public LogLevel getLevel() {
         return level;
     }
 
-    /**
-     * Returns true if console logging is enabled.
-     */
     public boolean isConsoleEnabled() {
         return console.isEnabled();
     }
 
-    /**
-     * Returns the log pattern for console output.
-     */
     public String getConsolePattern() {
         return console.getPattern();
     }
 
-    /**
-     * Returns the path to the log file.
-     */
     public Path getLogsDirPath() throws IOException {
         return OrchestratorPaths.getInstance().getLogsDirPath();
     }
 
-    /**
-     * Returns the log pattern for file output.
-     */
     public String getFilePattern() {
         return file.getPattern();
     }
 
-    /**
-     * Returns the maximum log file size in MB.
-     */
     public int getMaxFileSizeMB() {
         return file.getMaxFileSizeMB();
     }
 
-    /**
-     * Returns the number of backup log files to retain.
-     */
     public int getMaxBackupFiles() {
         return file.getMaxBackupFiles();
     }
 
-    /**
-     * Validates the log configuration.
-     * Ensures level, file, and console sections are present and valid.
-     *
-     * @throws OrchestratorConfigException if any validation fails
-     */
-    public void validate() throws OrchestratorConfigException {
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof LogConfig logConfig))
+            return false;
+        return level == logConfig.level &&
+                Objects.equals(file, logConfig.file) &&
+                Objects.equals(console, logConfig.console);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(level, file, console);
+    }
+
+    @Override
+    public String toString() {
+        return "LogConfig{" +
+                "level=" + level +
+                ", file=" + file.toString() +
+                ", console=" + console.toString() +
+                '}';
+    }
+
+    /** Validates the log configuration. Called from constructor. */
+    private void validate() {
+
         if (level == null) {
             throw new OrchestratorConfigException(
-                    "LogConfig.level is missing or invalid. Allowed values: INFO, WARN, ERROR, DEBUG");
+                    "LogConfig.level is missing or invalid. Allowed values: INFO, WARN, ERROR, DEBUG.");
         }
-
         if (file == null) {
-            throw new OrchestratorConfigException("LogConfig.file section is missing");
+            throw new OrchestratorConfigException("LogConfig.file section is missing.");
         }
-        file.validate();
 
         if (console == null) {
-            throw new OrchestratorConfigException("LogConfig.console section is missing");
+            throw new OrchestratorConfigException("LogConfig.console section is missing.");
         }
-        console.validate();
     }
 }

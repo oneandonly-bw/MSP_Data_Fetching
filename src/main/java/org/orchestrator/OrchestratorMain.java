@@ -1,48 +1,44 @@
 package org.orchestrator;
 
-import org.orchestrator.config.OrchestratorConfig;
-import org.orchestrator.logging.OrchestratorLogger;
-import org.orchestrator.logging.OrchestratorLoggerManager;
 
-import java.io.IOException;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.common.config.ConfigurationLoader;
+import org.common.config.JsonNodeConfigWrapper;
+import org.common.exception.ConfigurationLoadException;
+import org.common.logger.Log4j2Configurator;
+import org.common.logger.Logger;
+import org.common.logger.LoggerFactory;
+import org.orchestrator.fs.OrchestratorPaths;
 
+import static org.common.logger.LoggerConfigKeys.LOG4J2;
 
-//TODO: add an option to load config from custom location  => config.dir property
-//TODO: add OrchestratorLoggerManager.init (OrchestratorConfig config)
-//TODO: HTTP Server - the same as above
-//TODO: Paths - the same
 public class OrchestratorMain {
 
-    private static OrchestratorLogger logger;
-    private static OrchestratorConfig config;
+    public static void main(String[] args) throws ConfigurationLoadException {
 
-    public static void main(String[] args) throws IOException {
+        OrchestratorPaths.init();
+        OrchestratorPaths paths = OrchestratorPaths.getInstance();
 
-        //Initialize and validate orchestrator configuration
-        try {
-            OrchestratorConfig.init();
-            System.out.println("INFO: Orchestrator configuration is loaded");
-        } catch (Exception e) {
-            System.out.println("ERROR: Failed load orchestrator configuration. " +
-                    "Message: " + e.getMessage() + " Exiting...");
-            System.exit(1);
+        ConfigurationLoader.init(paths.getConfigFile());
+        ConfigurationLoader loader = ConfigurationLoader.getInstance();
+        JsonNode configNode = loader.getConfig();
+
+        JsonNodeConfigWrapper config = new JsonNodeConfigWrapper(configNode);
+        String logConfigJsonRoot = JsonNodeConfigWrapper.getJsonPath(LOG4J2);
+        JsonNodeConfigWrapper logConfig = config.getObject(logConfigJsonRoot);
+
+        Log4j2Configurator.configureFrom(logConfig);
+        Logger logger = LoggerFactory.getLogger(OrchestratorMain.class);
+        logger.info("firstTest");
+        logger.error("firstTest");
+
+        int loops = 10000;
+        while (loops >= 0) {
+            logger.info("firstTest_" + loops);
+            logger.error("firstTest_" + loops);
+            loops--;
         }
-
-        //Initialize orchestrator logger
-        try {
-            OrchestratorLoggerManager.init();
-        } catch (Exception e) {
-            System.out.println("ERROR: Failed to initialize logger. " +
-                    "Message: " + e.getMessage() + " Exiting...");
-            System.exit(1);
-        }
-
-        logger = OrchestratorLoggerManager.getLogger(OrchestratorMain.class);
-        logger.info("Logger is initialized");
-
     }
 
-    private void shutdown() {
-        OrchestratorLoggerManager.shutdown();
-    }
 }

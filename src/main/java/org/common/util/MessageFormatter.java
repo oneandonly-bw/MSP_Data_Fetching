@@ -1,4 +1,4 @@
-package org.orchestrator.util;
+package org.common.util;
 
 /**
  * Utility class to format messages with placeholders and special tokens.

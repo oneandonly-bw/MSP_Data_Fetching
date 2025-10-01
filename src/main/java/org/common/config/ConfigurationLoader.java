@@ -68,6 +68,14 @@ public final class ConfigurationLoader {
         return config;
     }
 
+    public JsonNode getLogConfig() {
+        if (config.hasNonNull("log4j2")) {
+            return config.get("log4j2");
+        } else {
+            return null;
+        }
+    }
+
     /**
      * Stub for reloading configuration (can be extended later).
      *

@@ -1,24 +1,31 @@
 {
+  "server": {
+
+    "whitelistSecretName": "orchestrator_whitelist",
+
     "jetty": {
       "host": "0.0.0.0",
       "acceptQueueSize": 50,
-      "http" : {
+
+      "http": {
         "enabled": true,
         "port": 8080
       },
+
       "https": {
         "enabled": false,
         "port": 8443,
         "httpsSecretName": "orchestrator_https_credentials"
       },
+
       "threadPool": {
         "type": "fixed",
         "maxThreads": 20,
         "minThreads": 10,
         "idleTimeoutSec": 60
-      },
-      "whitelistSecretName": "orchestrator_whitelist"
+      }
     },
+
     "log4j2": {
       "level": "INFO",
       "file": {
@@ -32,6 +39,7 @@
         "pattern": "%d{HH:mm:ss} [%t] %-5level %msg%n"
       }
     },
+
     "fetcherController": {
       "maxConcurrentFetchers": 15,
       "queueSize": 50,
@@ -40,4 +48,4 @@
       "requestTimeoutSec": 600,
       "restartTimeoutMinutes": 5
     }
-}
+  }

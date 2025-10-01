@@ -1,92 +1,121 @@
 package org.common.logger;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.Configurator;
 import org.apache.logging.log4j.core.config.builder.api.*;
 import org.apache.logging.log4j.core.config.builder.impl.BuiltConfiguration;
-import org.common.config.JsonNodeConfigWrapper;
-import org.common.exception.InvalidConfigurationException;
+import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilderFactory;
+import org.apache.logging.log4j.LogManager;
+
 import org.common.exception.LoggerInitializationException;
-import org.orchestrator.fs.OrchestratorPaths;
+import org.common.util.FileUtils;
 
 import java.io.File;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
-import static org.common.logger.LoggerConfigKeys.*;
 
 /**
- * Fully working Log4j2 configurator for JSON config.
+ * Log4j2 configurator using {@link RotationLogConfig}.
  * Supports console and rolling file appenders with root logger.
  */
 public final class Log4j2Configurator {
 
+    //Attributes
+    private static final String PATTERN_ATTR = "pattern";
+    private static final String SIZE_ATTR = "size";
+    private static final String MAX_ATTR = "max";
+    private static final String FILE_NAME_ATTR = "fileName";
+    private static final String FILE_PATTERN_ATTR = "filePattern";
+
+    //Plugins
+    private static final String PATTERN_LAYOUT = "PatternLayout";
+    private static final String POLICIES = "Policies";
+    private static final String SIZE_BASED_POLICY = "SizeBasedTriggeringPolicy";
+    private static final String ROLLOVER_STRATEGY = "DefaultRolloverStrategy";
+    private static final String ROLLING_FILE = "RollingFile";
+    private static final String CONSOLE = "CONSOLE";
+
+    //Names
+    private static final String DEFAULT_CONFIG_NAME = "DynamicLogConfig"; // configuration name
+    private static final String CONSOLE_APPENDER = "ConsoleAppender";
+    private static final String FILE_APPENDER = "FileAppender";
+
     private static volatile boolean initialized = false;
+    private static LoggerContext context;
 
-    private Log4j2Configurator() {}
+    private Log4j2Configurator() {
+        // prevent instantiation
+    }
 
-    public static synchronized void configureFrom(JsonNodeConfigWrapper logConfig) {
+    /**
+     * Configures Log4j2 using a given {@link RotationLogConfig}.
+     * <p>
+     * The configuration is first validated by calling {@link RotationLogConfig#validate()}.
+     *
+     * @param config the logging configuration
+     */
+    public static synchronized void configureFrom(RotationLogConfig config)
+    throws IllegalStateException, LoggerInitializationException {
+
         if (initialized) {
             throw new IllegalStateException("Log4j2 is already initialized");
         }
 
         try {
-            // Stop any previous config
-            LoggerContext oldContext = (LoggerContext) org.apache.logging.log4j.LogManager.getContext(false);
+            // Validate configuration first
+            config.validate();
+
+            // Stop previous context
+            LoggerContext oldContext = (LoggerContext) LogManager.getContext(false);
             oldContext.stop();
 
-            // Root level
-            String levelStr = logConfig.getString(LOG4J2_LEVEL, "INFO");
-            Level rootLevel = Level.toLevel(levelStr, Level.INFO);
+            // Root logger level
+            Level rootLevel = Level.toLevel(config.getRootLevel(), Level.INFO);
 
+            // Build configuration
             ConfigurationBuilder<BuiltConfiguration> builder =
-                    org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilderFactory
-                            .newConfigurationBuilder();
+                    ConfigurationBuilderFactory.newConfigurationBuilder();
             builder.setStatusLevel(Level.ERROR);
-            builder.setConfigurationName("DynamicLogConfig");
+            builder.setConfigurationName(DEFAULT_CONFIG_NAME);
 
             // --- Console Appender ---
-            JsonNodeConfigWrapper consoleConfig = logConfig.getObject(LOG4J2_CONSOLE);
-            String consoleAppenderName = "ConsoleAppender";
-            if (consoleConfig != null && consoleConfig.getBoolean(LOG4J2_CONSOLE_ENABLED, false)) {
-                LayoutComponentBuilder layout = builder.newLayout("PatternLayout")
-                        .addAttribute("pattern", consoleConfig.getString(LOG4J2_CONSOLE_PATTERN, "%d{HH:mm:ss} [%t] %-5level %msg%n"));
-                AppenderComponentBuilder consoleAppender = builder.newAppender(consoleAppenderName, "CONSOLE")
-                        .add(layout);
+            if (config.isConsoleEnabled()) {
+                LayoutComponentBuilder layout = builder.newLayout(PATTERN_LAYOUT)
+                        .addAttribute(PATTERN_ATTR, config.getConsolePattern());
+
+                AppenderComponentBuilder consoleAppender =
+                        builder.newAppender(CONSOLE_APPENDER, CONSOLE).add(layout);
                 builder.add(consoleAppender);
             }
 
             // --- File Appender ---
-            JsonNodeConfigWrapper fileConf = logConfig.getObject(LOG4J2_FILE);
-            String fileAppenderName = "FileAppender";
-            if (fileConf != null) {
-                String path = fileConf.getString(LOG4J2_FILE_PATH);
-                path = buildAbsolutePath(path);
-                if (path == null || path.isBlank()) {
-                    throw new InvalidConfigurationException("File path cannot be null or blank");
+            if (config.isFileEnabled()) {
+
+                String resolvedFilePath = config.getFilePath().toAbsolutePath().toString();
+                String resolvedFileNoExtension = FileUtils.removeExtension(resolvedFilePath);
+                String extension = FileUtils.getFileExtension(resolvedFilePath);
+                if (extension.isBlank()) {
+                    extension = "log";
+                    resolvedFilePath = resolvedFilePath + "." + extension;
                 }
 
-                Path absolutePath = Paths.get(path);
-                File parent = absolutePath.toFile().getParentFile();
+                File parent = new File(resolvedFilePath).getParentFile();
                 if (parent != null && !parent.exists() && !parent.mkdirs()) {
-                    throw new InvalidConfigurationException("Cannot create log directory: " + parent);
+                    throw new LoggerInitializationException("Cannot create log directory: " + parent);
                 }
 
-                LayoutComponentBuilder layout = builder.newLayout("PatternLayout")
-                        .addAttribute("pattern", fileConf.getString(LOG4J2_FILE_PATTERN, "%d [%t] %-5level %msg%n"));
+                LayoutComponentBuilder layout = builder.newLayout(PATTERN_LAYOUT)
+                        .addAttribute(PATTERN_ATTR, config.getFilePattern());
 
-                ComponentBuilder<?> triggeringPolicy = builder.newComponent("Policies")
-                        .addComponent(builder.newComponent("SizeBasedTriggeringPolicy")
-                                .addAttribute("size", fileConf.getInt(LOG4J2_FILE_MAX_FILE_SIZE_MB, 50) + "MB"));
+                ComponentBuilder<?> triggeringPolicy = builder.newComponent(POLICIES)
+                        .addComponent(builder.newComponent(SIZE_BASED_POLICY)
+                                .addAttribute(SIZE_ATTR, config.getMaxFileSizeMb() + "MB"));
 
-                ComponentBuilder<?> strategy = builder.newComponent("DefaultRolloverStrategy")
-                        .addAttribute("max", fileConf.getInt(LOG4J2_FILE_MAX_BACKUP_FILES, 5));
+                ComponentBuilder<?> strategy = builder.newComponent(ROLLOVER_STRATEGY)
+                        .addAttribute(MAX_ATTR, config.getMaxRollovers());
 
-                AppenderComponentBuilder fileAppender = builder.newAppender(fileAppenderName, "RollingFile")
-                        .addAttribute("fileName", absolutePath)
-                        .addAttribute("filePattern", absolutePath + "_%i.log")
+                AppenderComponentBuilder fileAppender = builder.newAppender(FILE_APPENDER, ROLLING_FILE)
+                        .addAttribute(FILE_NAME_ATTR, resolvedFilePath)
+                        .addAttribute(FILE_PATTERN_ATTR, resolvedFileNoExtension + "_%i." + extension)
                         .add(layout)
                         .addComponent(triggeringPolicy)
                         .addComponent(strategy);
@@ -96,16 +125,16 @@ public final class Log4j2Configurator {
 
             // --- Root Logger ---
             RootLoggerComponentBuilder rootLogger = builder.newRootLogger(rootLevel);
-            if (consoleConfig != null && consoleConfig.getBoolean(LOG4J2_CONSOLE_ENABLED, false)) {
-                rootLogger.add(builder.newAppenderRef(consoleAppenderName));
+            if (config.isConsoleEnabled()) {
+                rootLogger.add(builder.newAppenderRef(CONSOLE_APPENDER));
             }
-            if (fileConf != null) {
-                rootLogger.add(builder.newAppenderRef(fileAppenderName));
+            if (config.isFileEnabled()) {
+                rootLogger.add(builder.newAppenderRef(FILE_APPENDER));
             }
             builder.add(rootLogger);
 
-            // Initialize
-            LoggerContext context = Configurator.initialize(builder.build());
+            // Initialize Log4j2
+            context = Configurator.initialize(builder.build());
             context.start();
 
             initialized = true;
@@ -115,7 +144,22 @@ public final class Log4j2Configurator {
         }
     }
 
-    static String  buildAbsolutePath(String relativePath) {
-        return String.valueOf(Paths.get(OrchestratorPaths.getInstance().getRoot().toString(), relativePath ));
+    /**
+     * Shuts down the Log4j2 logging context managed by this configurator.
+     * <p>
+     * This method stops the {@link LoggerContext} and releases all resources associated with it.
+     * After calling this method, the configurator can be re-initialized using
+     * {@link #configureFrom(RotationLogConfig)}.
+     * <p>
+     * It is recommended to call this method during application shutdown to ensure
+     * all loggers are properly flushed and resources are cleaned up.
+     */
+    public static synchronized void shutdown() {
+        if (context != null) {
+            context.stop();
+            context = null;
+            initialized = false;
+        }
     }
+
 }
